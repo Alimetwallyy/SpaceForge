@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from st_aggrid import AgGrid, GridOptionsBuilder
 
 # Page Configuration
 st.set_page_config(page_title="Space Forge", layout="wide")
@@ -14,36 +13,22 @@ if 'df_layout' not in st.session_state:
     data = [['Empty' for _ in range(10)] for _ in range(10)]
     st.session_state.df_layout = pd.DataFrame(data)
 
-# Function to handle cell edits from AgGrid
-def update_cell(change):
-    row, col, new_value = change['row'], change['col'], change['new']
-    st.session_state.df_layout.iat[row, col] = new_value
-
 # Create the main interface
 tab1, tab2 = st.tabs(["📊 Grid Editor", "🎨 Visual Viewer"])
 
 with tab1:
     st.header("Edit FC Layout Grid")
-    st.caption("Click on a cell to edit its type. This represents your AutoCAD logic layer.")
-
-    # Configure AgGrid for editing
-    gb = GridOptionsBuilder.from_dataframe(st.session_state.df_layout)
-    gb.configure_default_column(editable=True, resizable=True)
-    gb.configure_grid_options(onCellValueChanged=update_cell)
-    grid_options = gb.build()
-
-    # Display the editable grid
-    grid_response = AgGrid(
+    st.caption("Double-click on a cell to edit its type. This represents your AutoCAD logic layer.")
+    
+    # Use Streamlit's native data editor - NO EXTRA PACKAGE NEEDED
+    edited_df = st.data_editor(
         st.session_state.df_layout,
-        gridOptions=grid_options,
+        use_container_width=True,
         height=400,
-        theme='streamlit',
-        fit_columns=True,
-        allow_unsafe_jupyter_html=True,
         key='grid_editor'
     )
-    # Update session state if any changes were made
-    st.session_state.df_layout = grid_response['data']
+    # Update session state with the edited DataFrame
+    st.session_state.df_layout = edited_df
 
 with tab2:
     st.header("Visual Layout Viewer")
