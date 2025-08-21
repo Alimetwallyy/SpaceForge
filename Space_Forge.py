@@ -85,7 +85,7 @@ with col2:
         xaxis=axis_config,
         yaxis=axis_config,
         plot_bgcolor=st.session_state.bg_color.lower(),  # Set background color
-        paper_bgcolor='#0E1117',  Matches Streamlit dark sidebar
+        paper_bgcolor='#0E1117',  # Matches Streamlit dark sidebar
         title=f"Space Canvas ({st.session_state.canvas_size}m x {st.session_state.canvas_size}m)"
     )
     
