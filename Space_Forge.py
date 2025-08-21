@@ -1,34 +1,35 @@
 import streamlit as st
-from streamlit_drawable_canvas import st_canvas
-import json
+import plotly.graph_objects as go
+import numpy as np
+import pandas as pd
 
 # Page Configuration
 st.set_page_config(page_title="Space Forge: Professional CAD", layout="wide")
 st.title("🛠️ Space Forge: Professional CAD Tool")
 
-# Initialize session state with default values
-if 'canvas_tool' not in st.session_state:
-    st.session_state.canvas_tool = "line"
-if 'stroke_width' not in st.session_state:
-    st.session_state.stroke_width = 2
+# Initialize session state
+if 'drawing_mode' not in st.session_state:
+    st.session_state.drawing_mode = "select"
+if 'shapes' not in st.session_state:
+    st.session_state.shapes = []
+if 'temp_points' not in st.session_state:
+    st.session_state.temp_points = []
+if 'canvas_size' not in st.session_state:
+    st.session_state.canvas_size = 1000
+if 'grid_size' not in st.session_state:
+    st.session_state.grid_size = 50
 if 'stroke_color' not in st.session_state:
     st.session_state.stroke_color = "#000000"
 if 'bg_color' not in st.session_state:
     st.session_state.bg_color = "#FFFFFF"
-if 'canvas_size' not in st.session_state:
-    st.session_state.canvas_size = 1000
-if 'canvas_scale' not in st.session_state:
-    st.session_state.canvas_scale = 1.0
-if 'canvas_key' not in st.session_state:
-    st.session_state.canvas_key = 0
 
 # Tool definitions
 tools = {
-    "select": "Select and transform objects",
+    "select": "Select objects",
     "line": "Draw a line between two points",
-    "rect": "Draw a rectangle",
-    "circle": "Draw a circle (center point + radius)",
-    "freedraw": "Free drawing tool"
+    "rectangle": "Draw a rectangle",
+    "circle": "Draw a circle",
+    "triangle": "Draw a triangle"
 }
 
 # Sidebar - Tools and Properties
@@ -36,7 +37,7 @@ with st.sidebar:
     st.header("🛠️ CAD Tools")
     
     # Tool selection
-    st.session_state.canvas_tool = st.selectbox(
+    st.session_state.drawing_mode = st.selectbox(
         "Drawing Tool:",
         options=list(tools.keys()),
         format_func=lambda x: f"{x.capitalize()} - {tools[x]}"
@@ -44,100 +45,162 @@ with st.sidebar:
     
     # Properties
     st.header("Properties")
-    st.session_state.stroke_width = st.slider("Line Width:", 1, 10, 2)
     st.session_state.stroke_color = st.color_picker("Line Color:", "#000000")
     st.session_state.bg_color = st.color_picker("Background Color:", "#FFFFFF")
     
     # Canvas settings
     st.header("Canvas Settings")
-    st.session_state.canvas_size = st.number_input("Canvas Size (pixels):", 500, 2000, 1000)
-    st.session_state.canvas_scale = st.slider("Zoom Level:", 0.5, 2.0, 1.0, 0.1)
+    st.session_state.canvas_size = st.number_input("Canvas Size (units):", 500, 2000, 1000)
+    st.session_state.grid_size = st.slider("Grid Size:", 10, 100, 50)
     
     # Actions
     st.header("Actions")
     if st.button("🔄 Clear Canvas", use_container_width=True):
-        st.session_state.canvas_key += 1
+        st.session_state.shapes = []
+        st.session_state.temp_points = []
+        st.rerun()
+    
+    if st.button("📐 Toggle Grid", use_container_width=True):
+        st.session_state.show_grid = not st.session_state.get('show_grid', True)
         st.rerun()
 
-# Main content area
+# Create the main canvas
 col1, col2 = st.columns([3, 1])
 
 with col1:
     st.header("🎨 Drawing Canvas")
     
-    # Display grid and measurements if enabled
-    if st.checkbox("Show Grid", True):
-        st.caption(f"Canvas Size: {st.session_state.canvas_size}px × {st.session_state.canvas_size}px | Scale: {st.session_state.canvas_scale}")
+    # Create a clickable grid using Plotly
+    fig = go.Figure()
     
-    # Create the canvas with proper error handling
-    try:
-        canvas_result = st_canvas(
-            fill_color="rgba(255, 165, 0, 0.3)",
-            stroke_width=st.session_state.stroke_width,
-            stroke_color=st.session_state.stroke_color,
-            background_color=st.session_state.bg_color,
-            background_image=None,
-            update_streamlit=True,
-            height=st.session_state.canvas_size,
-            width=st.session_state.canvas_size,
-            drawing_mode=st.session_state.canvas_tool,
-            key=f"canvas_{st.session_state.canvas_key}",
-        )
-    except Exception as e:
-        st.error(f"Canvas initialization error: {str(e)}")
-        # Fallback to a simple canvas if the advanced one fails
-        st.info("Using simplified canvas due to compatibility issues")
-        canvas_result = None
+    # Add grid if enabled
+    if st.session_state.get('show_grid', True):
+        grid_lines = []
+        for i in range(0, st.session_state.canvas_size + 1, st.session_state.grid_size):
+            grid_lines.append(
+                dict(type="line", x0=i, y0=0, x1=i, y1=st.session_state.canvas_size, 
+                     line=dict(color="lightgray", width=1))
+            )
+            grid_lines.append(
+                dict(type="line", x0=0, y0=i, x1=st.session_state.canvas_size, y1=i, 
+                     line=dict(color="lightgray", width=1))
+            )
+        fig.update_layout(shapes=grid_lines)
+    
+    # Add existing shapes to the plot
+    for shape in st.session_state.shapes:
+        if shape['type'] == 'line':
+            fig.add_trace(go.Scatter(
+                x=[shape['x1'], shape['x2']], y=[shape['y1'], shape['y2']],
+                mode='lines', line=dict(color=shape['color'], width=2)
+            ))
+        elif shape['type'] == 'rectangle':
+            x0, y0, x1, y1 = shape['x1'], shape['y1'], shape['x2'], shape['y2']
+            fig.add_trace(go.Scatter(
+                x=[x0, x1, x1, x0, x0], y=[y0, y0, y1, y1, y0],
+                mode='lines', fill="none", line=dict(color=shape['color'], width=2)
+            ))
+    
+    # Configure the layout
+    fig.update_layout(
+        width=700,
+        height=700,
+        xaxis=dict(range=[0, st.session_state.canvas_size], showgrid=False, zeroline=False),
+        yaxis=dict(range=[0, st.session_state.canvas_size], showgrid=False, zeroline=False),
+        plot_bgcolor=st.session_state.bg_color,
+        dragmode="drawline" if st.session_state.drawing_mode != "select" else "select",
+        title="Click to place points. Select tool to manipulate objects."
+    )
+    
+    # Display the plot
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Coordinate input for precision drawing
+    st.subheader("📏 Precision Drawing")
+    col_x, col_y = st.columns(2)
+    with col_x:
+        x_coord = st.number_input("X Coordinate:", 0, st.session_state.canvas_size, 0)
+    with col_y:
+        y_coord = st.number_input("Y Coordinate:", 0, st.session_state.canvas_size, 0)
+    
+    if st.button("Add Point at Coordinates"):
+        st.session_state.temp_points.append((x_coord, y_coord))
+        st.success(f"Point added at ({x_coord}, {y_coord})")
+        
+        # If we have enough points for the current tool, create the shape
+        if st.session_state.drawing_mode == "line" and len(st.session_state.temp_points) >= 2:
+            x1, y1 = st.session_state.temp_points[-2]
+            x2, y2 = st.session_state.temp_points[-1]
+            st.session_state.shapes.append({
+                'type': 'line', 'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2,
+                'color': st.session_state.stroke_color
+            })
+            st.session_state.temp_points = []
+            st.rerun()
+        
+        elif st.session_state.drawing_mode == "rectangle" and len(st.session_state.temp_points) >= 2:
+            x1, y1 = st.session_state.temp_points[-2]
+            x2, y2 = st.session_state.temp_points[-1]
+            st.session_state.shapes.append({
+                'type': 'rectangle', 'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2,
+                'color': st.session_state.stroke_color
+            })
+            st.session_state.temp_points = []
+            st.rerun()
 
 with col2:
-    st.header("📋 Object Properties")
+    st.header("📋 Object Manager")
     
-    if canvas_result and canvas_result.json_data and "objects" in canvas_result.json_data:
-        objects = canvas_result.json_data["objects"]
-        st.write(f"Objects on canvas: {len(objects)}")
+    if st.session_state.shapes:
+        st.write(f"Objects on canvas: {len(st.session_state.shapes)}")
         
-        # Display properties of selected object if available
-        if hasattr(canvas_result, 'selected_object') and canvas_result.selected_object:
-            st.subheader("Selected Object")
-            st.json(canvas_result.selected_object)
+        for i, shape in enumerate(st.session_state.shapes):
+            with st.expander(f"Object {i+1} - {shape['type']}"):
+                st.write(f"Type: {shape['type']}")
+                if shape['type'] == 'line':
+                    st.write(f"From: ({shape['x1']}, {shape['y1']})")
+                    st.write(f"To: ({shape['x2']}, {shape['y2']})")
+                elif shape['type'] == 'rectangle':
+                    st.write(f"Corner 1: ({shape['x1']}, {shape['y1']})")
+                    st.write(f"Corner 2: ({shape['x2']}, {shape['y2']})")
+                
+                if st.button(f"Delete Object {i+1}", key=f"del_{i}"):
+                    st.session_state.shapes.pop(i)
+                    st.rerun()
     else:
-        st.info("No objects on canvas. Start drawing using the tools in the sidebar.")
+        st.info("No objects on canvas. Use the tools to create shapes.")
     
     st.header("📐 Measurements")
-    st.info("Measurement tools will be available in the next update")
+    if st.session_state.shapes:
+        total_length = 0
+        for shape in st.session_state.shapes:
+            if shape['type'] == 'line':
+                dx = shape['x2'] - shape['x1']
+                dy = shape['y2'] - shape['y1']
+                total_length += (dx**2 + dy**2)**0.5
+        
+        st.metric("Total Line Length", f"{total_length:.2f} units")
+    else:
+        st.write("No measurements available")
 
-# Instructions section
+# Instructions
 with st.expander("📖 How to Use This CAD Tool"):
     st.markdown("""
     **Professional CAD Tool Instructions:**
     
     1. **Select a Tool** from the sidebar
-        - **Line**: Click and drag to create straight lines
-        - **Circle**: Click for center, drag to set radius
-        - **Rect**: Click and drag to create rectangles
-        - **Select**: Click on objects to select and transform them
+    2. **Enter precise coordinates** in the precision drawing section
+    3. **Click 'Add Point at Coordinates'** to place points
+    4. **For lines and rectangles**, add two points to create the shape
+    5. **View and manage objects** in the Object Manager panel
+    6. **Use the grid** for visual reference (toggle in sidebar)
     
-    2. **Adjust Properties**:
-        - Set line width and color before drawing
-        - Customize canvas background color
-        - Adjust canvas size and zoom level
-    
-    3. **Precision Drawing**:
-        - Use the grid for accurate measurements
-        - Select objects to view and edit their properties
+    **Tools Available:**
+    - **Line**: Create straight lines between two points
+    - **Rectangle**: Create rectangles from two opposite corners
+    - **Select**: View and delete existing objects
     """)
-
-# Add export functionality
-with st.sidebar:
-    if canvas_result and canvas_result.json_data:
-        st.download_button(
-            label="💾 Export Drawing",
-            data=json.dumps(canvas_result.json_data) if canvas_result.json_data else "{}",
-            file_name="drawing.json",
-            mime="application/json",
-            use_container_width=True
-        )
 
 # Footer
 st.divider()
-st.caption("Space Forge CAD Tool v1.0 • Designed for Amazon FC Space Management")
+st.caption("Space Forge CAD Tool v2.0 • Precision Engineering for Amazon FC Space Management")
