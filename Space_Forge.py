@@ -17,15 +17,21 @@ if 'canvas_size' not in st.session_state:
     st.session_state.canvas_size = 1000  # Default canvas size (1000x1000 meters)
 if 'bg_color' not in st.session_state:
     st.session_state.bg_color = 'White'  # Default background
+if 'last_click' not in st.session_state:
+    st.session_state.last_click = None  # Store the last click data
 
 # Function to add a new shape to the canvas
 def add_shape_to_canvas(click_data):
     if click_data is None:
         return
         
-    # Get the x and y coordinates of the click
-    x = click_data['points'][0]['x']
-    y = click_data['points'][0]['y']
+    # Get the x and y coordinates of the click from the correct path
+    try:
+        x = click_data['points'][0]['x']
+        y = click_data['points'][0]['y']
+    except (KeyError, IndexError):
+        # If the click is on an existing shape, not the background, ignore it.
+        return
     
     # Define properties for the new shape based on user selection
     new_shape = {
@@ -41,6 +47,7 @@ def add_shape_to_canvas(click_data):
 # Function to clear all shapes
 def clear_canvas():
     st.session_state.shapes = []
+    st.session_state.last_click = None
 
 # Create the main interface
 col1, col2 = st.columns([1, 3])
@@ -86,7 +93,8 @@ with col2:
         yaxis=axis_config,
         plot_bgcolor=st.session_state.bg_color.lower(),  # Set background color
         paper_bgcolor='#0E1117',  # Matches Streamlit dark sidebar
-        title=f"Space Canvas ({st.session_state.canvas_size}m x {st.session_state.canvas_size}m)"
+        title=f"Space Canvas ({st.session_state.canvas_size}m x {st.session_state.canvas_size}m)",
+        clickmode='event'  # This is crucial for enabling click events
     )
     
     # Plot all existing shapes from session state
@@ -103,18 +111,20 @@ with col2:
             name=f"{shape['type']}-{shape['color']}"
         ))
     
-    # Make the figure interactive and handle clicks
-    click_data = st.plotly_chart(
+    # Display the plot and get the click data
+    clicked = st.plotly_chart(
         fig,
         use_container_width=True,
-        key="main_canvas",
-        on_select="rerun"  # This captures the click event
+        key="main_canvas"
     )
-    
-    # If the user clicked on the canvas, add a new shape
-    if click_data.selection:
-        add_shape_to_canvas(click_data.selection)
-        st.rerun()  # Rerun to redraw the canvas with the new shape
+
+# This is the correct way to handle Plotly click events in Streamlit
+if clicked and clicked['last_active_drawing'] is not None:
+    # Check if this is a new click to avoid infinite loops
+    if clicked != st.session_state.last_click:
+        st.session_state.last_click = clicked
+        add_shape_to_canvas(clicked)
+        st.rerun()
 
 # Display current drawing info in the sidebar
 with st.sidebar:
