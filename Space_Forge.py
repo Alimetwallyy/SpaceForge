@@ -1,139 +1,80 @@
 import streamlit as st
-import plotly.graph_objects as go
+from streamlit_drawable_canvas import st_canvas
 import pandas as pd
+from PIL import Image
 
 # Page Configuration
 st.set_page_config(page_title="Space Forge: CAD", layout="wide")
 st.title("🛠️ Space Forge: CAD Canvas")
 
-# Initialize all session state variables
-if 'shapes' not in st.session_state:
-    st.session_state.shapes = []  # Stores all drawn shapes as plotly shapes
-if 'current_shape' not in st.session_state:
-    st.session_state.current_shape = 'circle'  # Default shape
-if 'current_color' not in st.session_state:
-    st.session_state.current_color = 'Blue'  # Default color
+# Initialize session state
 if 'canvas_size' not in st.session_state:
-    st.session_state.canvas_size = 1000  # Default canvas size (1000x1000 meters)
+    st.session_state.canvas_size = 1000
 if 'bg_color' not in st.session_state:
-    st.session_state.bg_color = 'White'  # Default background
-if 'last_click' not in st.session_state:
-    st.session_state.last_click = None  # Store the last click data
+    st.session_state.bg_color = "#FFFFFF"
+if 'drawing_mode' not in st.session_state:
+    st.session_state.drawing_mode = "freedraw"
+if 'stroke_color' not in st.session_state:
+    st.session_state.stroke_color = "#000000"
+if 'stroke_width' not in st.session_state:
+    st.session_state.stroke_width = 3
 
-# Function to add a new shape to the canvas
-def add_shape_to_canvas(click_data):
-    if click_data is None:
-        return
-        
-    # Get the x and y coordinates of the click from the correct path
-    try:
-        x = click_data['points'][0]['x']
-        y = click_data['points'][0]['y']
-    except (KeyError, IndexError):
-        # If the click is on an existing shape, not the background, ignore it.
-        return
-    
-    # Define properties for the new shape based on user selection
-    new_shape = {
-        'type': st.session_state.current_shape,
-        'color': st.session_state.current_color,
-        'x': x,
-        'y': y,
-        'size': 50  # Default size for shapes
-    }
-    # Add the new shape to the list
-    st.session_state.shapes.append(new_shape)
-
-# Function to clear all shapes
-def clear_canvas():
-    st.session_state.shapes = []
-    st.session_state.last_click = None
-
-# Create the main interface
+# Main interface
 col1, col2 = st.columns([1, 3])
 
 with col1:
-    st.header("Controls")
+    st.header("🛠️ Tools")
     
     # Canvas Settings
     st.subheader("Canvas Settings")
-    st.session_state.canvas_size = st.number_input("Canvas Size (meters)", min_value=100, value=1000, step=100)
-    st.session_state.bg_color = st.selectbox("Background Color", ("White", "Black"))
+    st.session_state.canvas_size = st.number_input("Canvas Size (px)", min_value=500, value=1000, step=100)
+    st.session_state.bg_color = st.color_picker("Background Color", "#FFFFFF")
     
     # Drawing Tools
     st.subheader("Drawing Tools")
-    st.session_state.current_shape = st.selectbox("Select Shape", ("circle", "rect", "triangle-up", "diamond", "pentagon", "hexagon"))
-    st.session_state.current_color = st.selectbox("Select Color", ("Red", "Blue", "Green", "Yellow", "Black", "White", "Orange", "Purple"))
+    st.session_state.drawing_mode = st.selectbox(
+        "Tool:",
+        ("freedraw", "line", "rect", "circle", "transform")
+    )
+    st.session_state.stroke_color = st.color_picker("Stroke Color:", "#000000")
+    st.session_state.stroke_width = st.slider("Stroke Width:", 1, 10, 3)
     
-    # Add a button to clear the canvas
-    if st.button("Clear Canvas", type="primary"):
-        clear_canvas()
+    if st.button("🗑️ Clear Canvas", type="primary"):
+        st.session_state.canvas_key += 1
         st.rerun()
-
-    st.info("Click on the canvas to place the selected shape.")
 
 with col2:
-    st.header("Design Canvas")
+    st.header("🎨 Canvas")
     
-    # Create the base figure (the empty canvas)
-    fig = go.Figure()
-    
-    # Set up the canvas layout based on user settings
-    axis_config = dict(
-        showgrid=True,
-        gridcolor="lightgray",
-        zeroline=False,
-        range=[0, st.session_state.canvas_size]  # Dynamic axis range
-    )
-    
-    fig.update_layout(
-        width=700,
-        height=700,
-        xaxis=axis_config,
-        yaxis=axis_config,
-        plot_bgcolor=st.session_state.bg_color.lower(),  # Set background color
-        paper_bgcolor='#0E1117',  # Matches Streamlit dark sidebar
-        title=f"Space Canvas ({st.session_state.canvas_size}m x {st.session_state.canvas_size}m)",
-        clickmode='event'  # This is crucial for enabling click events
-    )
-    
-    # Plot all existing shapes from session state
-    for shape in st.session_state.shapes:
-        fig.add_trace(go.Scatter(
-            x=[shape['x']],
-            y=[shape['y']],
-            mode='markers',
-            marker=dict(
-                symbol=shape['type'],
-                size=shape['size'],
-                color=shape['color']
-            ),
-            name=f"{shape['type']}-{shape['color']}"
-        ))
-    
-    # Display the plot and get the click data
-    clicked = st.plotly_chart(
-        fig,
-        use_container_width=True,
-        key="main_canvas"
+    # Create a canvas component
+    canvas_result = st_canvas(
+        fill_color="rgba(255, 165, 0, 0.3)",  # Fixed fill color with some opacity
+        stroke_width=st.session_state.stroke_width,
+        stroke_color=st.session_state.stroke_color,
+        background_color=st.session_state.bg_color,
+        background_image=None,
+        update_streamlit=True,
+        height=st.session_state.canvas_size,
+        width=st.session_state.canvas_size,
+        drawing_mode=st.session_state.drawing_mode,
+        point_display_radius=0,
+        key="main_canvas",
     )
 
-# This is the correct way to handle Plotly click events in Streamlit
-if clicked and clicked['last_active_drawing'] is not None:
-    # Check if this is a new click to avoid infinite loops
-    if clicked != st.session_state.last_click:
-        st.session_state.last_click = clicked
-        add_shape_to_canvas(clicked)
-        st.rerun()
+    # Do something interesting with the canvas data
+    if canvas_result.json_data is not None:
+        objects = pd.json_normalize(canvas_result.json_data["objects"])
+        if not objects.empty:
+            st.write(f"Objects on canvas: {len(objects)}")
+            st.dataframe(objects)
 
-# Display current drawing info in the sidebar
+# Sidebar for info
 with st.sidebar:
-    st.header("Current Drawing")
-    st.write(f"Shapes on canvas: **{len(st.session_state.shapes)}**")
-    if st.session_state.shapes:
-        st.download_button(
-            label="Export Drawing Data (CSV)",
-            data=pd.DataFrame(st.session_state.shapes).to_csv(index=False).encode('utf-8'),
-            file_name='fc_layout_drawing.csv',
-            mime='text/csv',
-        )
+    st.header("ℹ️ Info")
+    st.markdown("""
+    **How to use:**
+    1. Select a tool (draw, rectangle, circle, etc.)
+    2. Choose a color and stroke width.
+    3. **Click and drag** on the canvas to draw.
+    4. Use the 'transform' tool to select and move objects.
+    """)
