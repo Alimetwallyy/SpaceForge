@@ -1,13 +1,12 @@
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
-import pandas as pd
 import json
 
 # Page Configuration
 st.set_page_config(page_title="Space Forge: Professional CAD", layout="wide")
 st.title("🛠️ Space Forge: Professional CAD Tool")
 
-# Initialize session state
+# Initialize session state with default values
 if 'canvas_tool' not in st.session_state:
     st.session_state.canvas_tool = "line"
 if 'stroke_width' not in st.session_state:
@@ -20,8 +19,6 @@ if 'canvas_size' not in st.session_state:
     st.session_state.canvas_size = 1000
 if 'canvas_scale' not in st.session_state:
     st.session_state.canvas_scale = 1.0
-if 'drawing_objects' not in st.session_state:
-    st.session_state.drawing_objects = []
 if 'canvas_key' not in st.session_state:
     st.session_state.canvas_key = 0
 
@@ -29,9 +26,8 @@ if 'canvas_key' not in st.session_state:
 tools = {
     "select": "Select and transform objects",
     "line": "Draw a line between two points",
-    "circle": "Draw a circle (center point + radius)",
     "rect": "Draw a rectangle",
-    "triangle": "Draw a triangle",
+    "circle": "Draw a circle (center point + radius)",
     "freedraw": "Free drawing tool"
 }
 
@@ -60,19 +56,8 @@ with st.sidebar:
     # Actions
     st.header("Actions")
     if st.button("🔄 Clear Canvas", use_container_width=True):
-        st.session_state.drawing_objects = []
         st.session_state.canvas_key += 1
         st.rerun()
-    
-    if st.button("💾 Save Project", use_container_width=True):
-        if st.session_state.drawing_objects:
-            st.download_button(
-                label="Download Drawing Data",
-                data=json.dumps(st.session_state.drawing_objects),
-                file_name="project.json",
-                mime="application/json",
-                use_container_width=True
-            )
 
 # Main content area
 col1, col2 = st.columns([3, 1])
@@ -84,52 +69,42 @@ with col1:
     if st.checkbox("Show Grid", True):
         st.caption(f"Canvas Size: {st.session_state.canvas_size}px × {st.session_state.canvas_size}px | Scale: {st.session_state.canvas_scale}")
     
-    # Create the canvas
-    canvas_result = st_canvas(
-        fill_color="rgba(255, 165, 0, 0.3)",
-        stroke_width=st.session_state.stroke_width,
-        stroke_color=st.session_state.stroke_color,
-        background_color=st.session_state.bg_color,
-        background_image=None,
-        update_streamlit=True,
-        height=st.session_state.canvas_size,
-        width=st.session_state.canvas_size,
-        drawing_mode=st.session_state.canvas_tool,
-        initial_drawing=st.session_state.drawing_objects,
-        key=f"canvas_{st.session_state.canvas_key}",
-    )
-    
-    # Update drawing objects if canvas has changed
-    if canvas_result.json_data is not None:
-        st.session_state.drawing_objects = canvas_result.json_data.get("objects", [])
+    # Create the canvas with proper error handling
+    try:
+        canvas_result = st_canvas(
+            fill_color="rgba(255, 165, 0, 0.3)",
+            stroke_width=st.session_state.stroke_width,
+            stroke_color=st.session_state.stroke_color,
+            background_color=st.session_state.bg_color,
+            background_image=None,
+            update_streamlit=True,
+            height=st.session_state.canvas_size,
+            width=st.session_state.canvas_size,
+            drawing_mode=st.session_state.canvas_tool,
+            key=f"canvas_{st.session_state.canvas_key}",
+        )
+    except Exception as e:
+        st.error(f"Canvas initialization error: {str(e)}")
+        # Fallback to a simple canvas if the advanced one fails
+        st.info("Using simplified canvas due to compatibility issues")
+        canvas_result = None
 
 with col2:
     st.header("📋 Object Properties")
     
-    if st.session_state.drawing_objects:
-        st.write(f"Objects on canvas: {len(st.session_state.drawing_objects)}")
+    if canvas_result and canvas_result.json_data and "objects" in canvas_result.json_data:
+        objects = canvas_result.json_data["objects"]
+        st.write(f"Objects on canvas: {len(objects)}")
         
-        # Display properties of selected object
-        if canvas_result.selected_object is not None:
+        # Display properties of selected object if available
+        if hasattr(canvas_result, 'selected_object') and canvas_result.selected_object:
             st.subheader("Selected Object")
             st.json(canvas_result.selected_object)
     else:
         st.info("No objects on canvas. Start drawing using the tools in the sidebar.")
     
     st.header("📐 Measurements")
-    if st.session_state.drawing_objects:
-        # Calculate approximate total line length
-        total_length = 0
-        for obj in st.session_state.drawing_objects:
-            if obj.get("type") == "line":
-                x1, y1 = obj.get("x1", 0), obj.get("y1", 0)
-                x2, y2 = obj.get("x2", 0), obj.get("y2", 0)
-                length = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
-                total_length += length
-        
-        st.metric("Total Line Length", f"{total_length:.2f} pixels")
-    else:
-        st.write("No measurements available")
+    st.info("Measurement tools will be available in the next update")
 
 # Instructions section
 with st.expander("📖 How to Use This CAD Tool"):
@@ -140,7 +115,6 @@ with st.expander("📖 How to Use This CAD Tool"):
         - **Line**: Click and drag to create straight lines
         - **Circle**: Click for center, drag to set radius
         - **Rect**: Click and drag to create rectangles
-        - **Triangle**: Coming soon (use line tool for now)
         - **Select**: Click on objects to select and transform them
     
     2. **Adjust Properties**:
@@ -151,8 +125,18 @@ with st.expander("📖 How to Use This CAD Tool"):
     3. **Precision Drawing**:
         - Use the grid for accurate measurements
         - Select objects to view and edit their properties
-        - Export your project when finished
     """)
+
+# Add export functionality
+with st.sidebar:
+    if canvas_result and canvas_result.json_data:
+        st.download_button(
+            label="💾 Export Drawing",
+            data=json.dumps(canvas_result.json_data) if canvas_result.json_data else "{}",
+            file_name="drawing.json",
+            mime="application/json",
+            use_container_width=True
+        )
 
 # Footer
 st.divider()
